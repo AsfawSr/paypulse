@@ -137,10 +137,12 @@ public class HttpTransport {
 
             return objectMapper.readValue(response.body(), responseType);
         } catch (IOException e) {
-            throw new NetworkException("I/O error during API request: " + e.getMessage(), e);
+            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+            throw new NetworkException("I/O error during API request: " + errorDetail, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new NetworkException("API request was interrupted: " + e.getMessage(), e);
+            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+            throw new NetworkException("API request was interrupted: " + errorDetail, e);
         }
     }
 
@@ -155,10 +157,12 @@ public class HttpTransport {
 
             return objectMapper.readValue(response.body(), typeRef);
         } catch (IOException e) {
-            throw new NetworkException("I/O error during API request: " + e.getMessage(), e);
+            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+            throw new NetworkException("I/O error during API request: " + errorDetail, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new NetworkException("API request was interrupted: " + e.getMessage(), e);
+            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+            throw new NetworkException("API request was interrupted: " + errorDetail, e);
         }
     }
 

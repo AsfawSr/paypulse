@@ -1,40 +1,76 @@
 package io.paypulse.sdk;
 
 import io.paypulse.sdk.config.PayPulseConfig;
+import io.paypulse.sdk.http.HttpTransport;
+import io.paypulse.sdk.resource.CustomersResource;
+import io.paypulse.sdk.resource.PaymentsResource;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Main entry point for interacting with the PayPulse API.
+ * Main entry point for interacting with the PayPulse Payment and Customer API.
  * <p>
- * Instantiate this client using the builder:
+ * Example usage:
  * <pre>{@code
  * PayPulseClient client = PayPulseClient.builder()
  *     .apiKey("sk_test_12345")
- *     .timeout(Duration.ofSeconds(10))
+ *     .timeout(Duration.ofSeconds(15))
  *     .build();
+ *
+ * Customer customer = client.customers().getById("cus_123");
  * }</pre>
  */
 public class PayPulseClient implements AutoCloseable {
 
     private final PayPulseConfig config;
+    private final HttpTransport transport;
+    private final CustomersResource customers;
+    private final PaymentsResource payments;
 
-    protected PayPulseClient(PayPulseConfig config) {
+    protected PayPulseClient(PayPulseConfig config, HttpTransport transport) {
         this.config = Objects.requireNonNull(config, "config must not be null");
+        this.transport = Objects.requireNonNull(transport, "transport must not be null");
+        this.customers = new CustomersResource(this.transport);
+        this.payments = new PaymentsResource(this.transport);
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Access operations on the Customers API.
+     */
+    public CustomersResource customers() {
+        return customers;
+    }
+
+    /**
+     * Access operations on the Payments API.
+     */
+    public PaymentsResource payments() {
+        return payments;
+    }
+
+    /**
+     * Returns the active configuration for this client.
+     */
     public PayPulseConfig getConfig() {
         return config;
     }
 
+    /**
+     * Returns the underlying HTTP transport engine.
+     */
+    public HttpTransport getTransport() {
+        return transport;
+    }
+
     @Override
     public void close() {
-        // Hook for resource cleanup when transport is attached
+        // Reserved for shutting down any background connection pools if necessary
     }
 
     public static class Builder {
@@ -42,6 +78,7 @@ public class PayPulseClient implements AutoCloseable {
         private String baseUrl = PayPulseConfig.DEFAULT_BASE_URL;
         private Duration timeout = PayPulseConfig.DEFAULT_TIMEOUT;
         private int maxRetries = PayPulseConfig.DEFAULT_MAX_RETRIES;
+        private HttpClient customHttpClient;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -63,9 +100,17 @@ public class PayPulseClient implements AutoCloseable {
             return this;
         }
 
+        public Builder httpClient(HttpClient httpClient) {
+            this.customHttpClient = httpClient;
+            return this;
+        }
+
         public PayPulseClient build() {
             PayPulseConfig config = new PayPulseConfig(apiKey, baseUrl, timeout, maxRetries);
-            return new PayPulseClient(config);
+            HttpTransport transport = (customHttpClient != null)
+                    ? new HttpTransport(config, customHttpClient)
+                    : new HttpTransport(config);
+            return new PayPulseClient(config, transport);
         }
     }
 }

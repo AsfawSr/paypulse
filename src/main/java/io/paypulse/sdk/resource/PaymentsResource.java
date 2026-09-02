@@ -85,6 +85,56 @@ public class PaymentsResource {
         return transport.get(path.toString(), new TypeReference<Page<Payment>>() {});
     }
 
+    // ==========================================
+    // Asynchronous API Methods
+    // ==========================================
+
+    /**
+     * Asynchronously charges a customer or payment source.
+     */
+    public java.util.concurrent.CompletableFuture<Payment> chargeAsync(ChargeRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
+        return transport.postAsync("/payments", request, Payment.class, request.idempotencyKey());
+    }
+
+    /**
+     * Asynchronously retrieves a payment by unique ID.
+     */
+    public java.util.concurrent.CompletableFuture<Payment> getByIdAsync(String paymentId) {
+        validateId(paymentId, "paymentId");
+        return transport.getAsync("/payments/" + encode(paymentId), Payment.class);
+    }
+
+    /**
+     * Asynchronously refunds a payment.
+     */
+    public java.util.concurrent.CompletableFuture<Payment> refundAsync(String paymentId, RefundRequest request) {
+        validateId(paymentId, "paymentId");
+        String idempotencyKey = (request != null) ? request.idempotencyKey() : null;
+        return transport.postAsync("/payments/" + encode(paymentId) + "/refund", request, Payment.class, idempotencyKey);
+    }
+
+    /**
+     * Asynchronously lists payments with default pagination.
+     */
+    public java.util.concurrent.CompletableFuture<Page<Payment>> listAsync() {
+        return listAsync(20, null, null);
+    }
+
+    /**
+     * Asynchronously lists payments with filtering and pagination parameters.
+     */
+    public java.util.concurrent.CompletableFuture<Page<Payment>> listAsync(int limit, String customerId, String startingAfter) {
+        StringBuilder path = new StringBuilder("/payments?limit=").append(limit);
+        if (customerId != null && !customerId.isBlank()) {
+            path.append("&customer_id=").append(encode(customerId));
+        }
+        if (startingAfter != null && !startingAfter.isBlank()) {
+            path.append("&starting_after=").append(encode(startingAfter));
+        }
+        return transport.getAsync(path.toString(), new TypeReference<Page<Payment>>() {});
+    }
+
     private void validateId(String id, String paramName) {
         Objects.requireNonNull(id, paramName + " must not be null");
         if (id.isBlank()) {

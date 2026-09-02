@@ -124,6 +124,26 @@ Payment refunded = client.payments().refund(payment.id(),
 
 ---
 
+### 4. Asynchronous & Non-Blocking API (`CompletableFuture`)
+
+For reactive and non-blocking high-throughput microservices, every operation offers an `...Async` method returning `CompletableFuture<T>`:
+
+```java
+import io.paypulse.sdk.model.payment.Payment;
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<Payment> future = client.payments().chargeAsync(chargeRequest);
+
+future.thenAccept(payment -> {
+    System.out.println("Async charge succeeded: " + payment.id());
+}).exceptionally(ex -> {
+    System.err.println("Async charge failed: " + ex.getMessage());
+    return null;
+});
+```
+
+---
+
 ## 🛡️ Error Handling
 
 The SDK throws descriptive, typed unchecked exceptions mapped directly from API status codes:

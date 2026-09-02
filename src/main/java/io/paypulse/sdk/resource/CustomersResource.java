@@ -91,6 +91,61 @@ public class CustomersResource {
         return transport.get(path.toString(), new TypeReference<Page<Customer>>() {});
     }
 
+    // ==========================================
+    // Asynchronous API Methods
+    // ==========================================
+
+    /**
+     * Asynchronously creates a new customer.
+     */
+    public java.util.concurrent.CompletableFuture<Customer> createAsync(CreateCustomerRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
+        return transport.postAsync("/customers", request, Customer.class);
+    }
+
+    /**
+     * Asynchronously retrieves a customer by unique ID.
+     */
+    public java.util.concurrent.CompletableFuture<Customer> getByIdAsync(String customerId) {
+        validateId(customerId, "customerId");
+        return transport.getAsync("/customers/" + encode(customerId), Customer.class);
+    }
+
+    /**
+     * Asynchronously updates an existing customer.
+     */
+    public java.util.concurrent.CompletableFuture<Customer> updateAsync(String customerId, UpdateCustomerRequest request) {
+        validateId(customerId, "customerId");
+        Objects.requireNonNull(request, "request must not be null");
+        return transport.putAsync("/customers/" + encode(customerId), request, Customer.class);
+    }
+
+    /**
+     * Asynchronously deletes a customer by ID.
+     */
+    public java.util.concurrent.CompletableFuture<Void> deleteAsync(String customerId) {
+        validateId(customerId, "customerId");
+        return transport.deleteAsync("/customers/" + encode(customerId));
+    }
+
+    /**
+     * Asynchronously lists customers with default pagination.
+     */
+    public java.util.concurrent.CompletableFuture<Page<Customer>> listAsync() {
+        return listAsync(20, null);
+    }
+
+    /**
+     * Asynchronously lists customers with pagination parameters.
+     */
+    public java.util.concurrent.CompletableFuture<Page<Customer>> listAsync(int limit, String startingAfter) {
+        StringBuilder path = new StringBuilder("/customers?limit=").append(limit);
+        if (startingAfter != null && !startingAfter.isBlank()) {
+            path.append("&starting_after=").append(encode(startingAfter));
+        }
+        return transport.getAsync(path.toString(), new TypeReference<Page<Customer>>() {});
+    }
+
     private void validateId(String id, String paramName) {
         Objects.requireNonNull(id, paramName + " must not be null");
         if (id.isBlank()) {

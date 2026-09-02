@@ -80,6 +80,24 @@ public class ExampleApp {
             System.out.println("    [Unexpected Error]: " + e.getMessage());
         }
 
+        // 5. Example: Asynchronous Non-Blocking Invocation (CompletableFuture)
+        System.out.println("[4] Demonstrating Asynchronous Non-Blocking Invocation:");
+        java.util.concurrent.CompletableFuture<Payment> asyncFuture = client.payments().chargeAsync(chargeRequest);
+
+        asyncFuture.thenAccept(payment -> {
+            System.out.println("    [Async Success]: Charged " + payment.id());
+        }).exceptionally(ex -> {
+            System.out.println("    [Async Expected Failure]: " + ex.getMessage());
+            return null;
+        });
+
+        // Wait for the async demonstration to complete before shutting down the app
+        try {
+            asyncFuture.join();
+        } catch (Exception ignored) {
+            // Handled in exceptionally block above
+        }
+
         System.out.println();
         System.out.println("SDK Execution complete.");
     }

@@ -93,6 +93,47 @@ public class HttpTransport {
         execute(request, Void.class);
     }
 
+    // ==========================================
+    // Asynchronous (Non-blocking) API Methods
+    // ==========================================
+
+    public <T> java.util.concurrent.CompletableFuture<T> getAsync(String path, Class<T> responseType) {
+        HttpRequest request = newRequestBuilder(path).GET().build();
+        return executeAsync(request, body -> deserialize(body, responseType));
+    }
+
+    public <T> java.util.concurrent.CompletableFuture<T> getAsync(String path, TypeReference<T> typeRef) {
+        HttpRequest request = newRequestBuilder(path).GET().build();
+        return executeAsync(request, body -> deserialize(body, typeRef));
+    }
+
+    public <T> java.util.concurrent.CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType) {
+        return postAsync(path, requestBody, responseType, null);
+    }
+
+    public <T> java.util.concurrent.CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType, String idempotencyKey) {
+        HttpRequest.Builder builder = newRequestBuilder(path);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            builder.header("Idempotency-Key", idempotencyKey);
+        }
+        String jsonBody = serialize(requestBody);
+        builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8));
+        return executeAsync(builder.build(), body -> deserialize(body, responseType));
+    }
+
+    public <T> java.util.concurrent.CompletableFuture<T> putAsync(String path, Object requestBody, Class<T> responseType) {
+        String jsonBody = serialize(requestBody);
+        HttpRequest request = newRequestBuilder(path)
+                .PUT(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                .build();
+        return executeAsync(request, body -> deserialize(body, responseType));
+    }
+
+    public java.util.concurrent.CompletableFuture<Void> deleteAsync(String path) {
+        HttpRequest request = newRequestBuilder(path).DELETE().build();
+        return executeAsync(request, body -> null);
+    }
+
     private HttpRequest.Builder newRequestBuilder(String path) {
         String fullUrl = buildFullUrl(path);
         return HttpRequest.newBuilder()
@@ -124,6 +165,39 @@ public class HttpTransport {
         } catch (Exception e) {
             throw new PayPulseException("Failed to serialize request body to JSON", e);
         }
+    }
+
+    private <T> T deserialize(String body, Class<T> responseType) {
+        if (responseType == Void.class || body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(body, responseType);
+        } catch (Exception e) {
+            throw new PayPulseException("Failed to deserialize response JSON", e);
+        }
+    }
+
+    private <T> T deserialize(String body, TypeReference<T> typeRef) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(body, typeRef);
+        } catch (Exception e) {
+            throw new PayPulseException("Failed to deserialize response JSON", e);
+        }
+    }
+
+    private <T> java.util.concurrent.CompletableFuture<T> executeAsync(HttpRequest request, java.util.function.Function<String, T> deserializer) {
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+                .thenApply(response -> {
+                    handleErrorStatus(response);
+                    if (response.statusCode() == 204 || response.body().isBlank()) {
+                        return null;
+                    }
+                    return deserializer.apply(response.body());
+                });
     }
 
     private <T> T execute(HttpRequest request, Class<T> responseType) {

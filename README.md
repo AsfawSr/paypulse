@@ -171,6 +171,38 @@ PayPulseClient client = PayPulseClient.builder()
 
 ---
 
+### 6. Webhook Cryptographic Signature Verification
+
+Protect your webhook endpoint against spoofing and replay attacks using **HMAC-SHA256** and constant-time signature verification:
+
+```java
+import io.paypulse.sdk.webhook.Webhook;
+import io.paypulse.sdk.model.webhook.Event;
+import io.paypulse.sdk.model.payment.Payment;
+import io.paypulse.sdk.exception.SignatureVerificationException;
+
+String payload = request.getBody(); // Raw JSON string
+String sigHeader = request.getHeader("PayPulse-Signature");
+String webhookSecret = "whsec_your_webhook_signing_secret";
+
+try {
+    // 1. Verify signature and replay attack timestamp tolerance (5 min default)
+    Event event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
+
+    // 2. Handle specific event types
+    if ("payment.succeeded".equals(event.type())) {
+        Payment payment = event.data().getObject(Payment.class);
+        System.out.println("Fulfilling order for payment: " + payment.id());
+    }
+} catch (SignatureVerificationException e) {
+    // Invalid signature or expired timestamp
+    response.setStatus(400);
+    System.err.println("Webhook verification failed: " + e.getMessage());
+}
+```
+
+---
+
 ## 🛡️ Error Handling
 
 The SDK throws descriptive, typed unchecked exceptions mapped directly from API status codes:

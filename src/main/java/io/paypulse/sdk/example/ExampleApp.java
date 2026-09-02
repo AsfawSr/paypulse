@@ -98,12 +98,37 @@ public class ExampleApp {
             return null;
         });
 
-        // Wait for the async demonstration to complete before shutting down the app
-        try {
-            asyncFuture.join();
-        } catch (Exception ignored) {
-            // Handled in exceptionally block above
-        }
+        // 6. Example: Webhook Cryptographic Verification (HMAC-SHA256)
+        System.out.println("[5] Demonstrating Webhook Signature Verification:");
+        String sampleWebhookJson = """
+                {
+                    "id": "evt_live_12345",
+                    "type": "payment.succeeded",
+                    "createdAt": "2026-08-31T12:00:00Z",
+                    "data": {
+                        "object": {
+                            "id": "pay_live_789",
+                            "customerId": "cus_demo123",
+                            "amount": 149.99,
+                            "currency": "USD",
+                            "status": "succeeded"
+                        }
+                    }
+                }
+                """;
+        String webhookSecret = "whsec_test_secret_abc123";
+        long now = java.time.Instant.now().getEpochSecond();
+        String validSigHeader = io.paypulse.sdk.webhook.Webhook.generateSignatureHeader(sampleWebhookJson, webhookSecret, now);
+
+        io.paypulse.sdk.model.webhook.Event event = io.paypulse.sdk.webhook.Webhook.constructEvent(
+                sampleWebhookJson,
+                validSigHeader,
+                webhookSecret
+        );
+
+        System.out.println("    [Webhook Verified]: Event ID " + event.id() + " of type '" + event.type() + "'");
+        Payment webhookPayment = event.data().getObject(Payment.class);
+        System.out.println("    [Parsed Event Model]: Payment ID " + webhookPayment.id() + " -> Status: " + webhookPayment.status());
 
         System.out.println();
         System.out.println("SDK Execution complete.");

@@ -269,14 +269,53 @@ src/main/java/io/paypulse/sdk/
 
 ---
 
-## 🧪 Running Tests & Building
+## 🧪 Running Tests & Packaging
 
-Run all automated unit and WireMock integration tests:
+### Run All 37 Automated Tests
 ```bash
 mvn clean test
 ```
 
-Package the SDK JAR:
+### Build Production Artifacts (JAR, Sources, Javadoc)
 ```bash
 mvn clean package
 ```
+This produces three compliant distribution bundles in `target/`:
+* `paypulse-java-sdk-1.0.0-SNAPSHOT.jar` — Binary bytecode
+* `paypulse-java-sdk-1.0.0-SNAPSHOT-sources.jar` — Attached source code for IDE debugging
+* `paypulse-java-sdk-1.0.0-SNAPSHOT-javadoc.jar` — Compiled HTML documentation
+
+---
+
+## 🚀 Publishing to Maven Central
+
+To publish releases to Maven Central via Sonatype Central Portal (`central.sonatype.com`):
+
+### 1. Set Up GPG Key
+```bash
+# Generate a GPG key pair if you don't have one
+gpg --gen-key
+
+# Send your public key to keyservers
+gpg --keyserver keyserver.ubuntu.com --send-keys <YOUR_KEY_ID>
+```
+
+### 2. Configure `~/.m2/settings.xml`
+```xml
+<settings>
+  <servers>
+    <server>
+      <id>central</id>
+      <username>your-sonatype-token-username</username>
+      <password>your-sonatype-token-password</password>
+    </server>
+  </servers>
+</settings>
+```
+
+### 3. Deploy Release
+```bash
+mvn clean deploy -P release
+```
+The SDK artifacts will be automatically validated, GPG-signed, uploaded to Sonatype, and synced globally across Maven Central mirrors.
+

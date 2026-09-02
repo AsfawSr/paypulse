@@ -10,7 +10,32 @@
     <packaging>jar</packaging>
 
     <name>PayPulse Java SDK</name>
-    <description>Official Java SDK for the PayPulse Payment and Billing API</description>
+    <description>Official type-safe Java SDK for integrating with the PayPulse Payment and Customer API</description>
+    <url>https://github.com/paypulse/paypulse-java-sdk</url>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>paypulse-team</id>
+            <name>PayPulse SDK Engineering</name>
+            <email>sdk-support@paypulse.io</email>
+            <organization>PayPulse Inc.</organization>
+            <organizationUrl>https://paypulse.io</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/paypulse/paypulse-java-sdk.git</connection>
+        <developerConnection>scm:git:ssh://github.com:paypulse/paypulse-java-sdk.git</developerConnection>
+        <url>https://github.com/paypulse/paypulse-java-sdk</url>
+    </scm>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -25,8 +50,7 @@
     </properties>
 
     <dependencies>
-        <!-- JSON Processing: Jackson Databind & Java 8/Date-Time module -->
-        <!-- Note: An SDK should keep its runtime dependencies minimal to avoid conflicting with the host app -->
+        <!-- JSON Processing: Jackson Databind & JSR-310 JavaTime Module -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -38,7 +62,7 @@
             <version>${jackson.version}</version>
         </dependency>
 
-        <!-- Test Dependencies (Scope: test - won't be bundled in production jar) -->
+        <!-- Test Dependencies (Scope: test) -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -76,6 +100,75 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.3.1</version>
             </plugin>
+            <!-- Source Plugin: Generates -sources.jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Javadoc Plugin: Generates -javadoc.jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.8.0</version>
+                <configuration>
+                    <release>21</release>
+                    <doclint>none</doclint>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Release Profile for Signing and Publishing to Maven Central -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- GPG Signing Plugin -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.5</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Sonatype Central Publishing Plugin -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.5.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

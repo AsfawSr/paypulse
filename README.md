@@ -144,6 +144,33 @@ future.thenAccept(payment -> {
 
 ---
 
+### 5. Automatic Retries with Exponential Backoff & Jitter
+
+The SDK includes a built-in resilience engine that automatically recovers from transient network drops and server spikes (`429`, `500`, `502`, `503`, `504`):
+
+```java
+import io.paypulse.sdk.PayPulseClient;
+import io.paypulse.sdk.http.RetryPolicy;
+import java.time.Duration;
+
+PayPulseClient client = PayPulseClient.builder()
+    .apiKey("sk_test_12345")
+    .maxRetries(3) // Automatically retry transient errors up to 3 times
+    .retryPolicy(new RetryPolicy(
+        3,                              // Max retries
+        Duration.ofMillis(500),         // Initial backoff
+        Duration.ofSeconds(10),         // Max backoff ceiling
+        2.0                             // Exponential multiplier
+    ))
+    .build();
+```
+
+* **Full Jitter**: Prevents "thundering herd" problems by randomizing retry intervals.
+* **`Retry-After` Header Aware**: Prioritizes the server's requested delay on HTTP 429.
+* **Idempotency Guard**: Never duplicates non-idempotent charges.
+
+---
+
 ## 🛡️ Error Handling
 
 The SDK throws descriptive, typed unchecked exceptions mapped directly from API status codes:

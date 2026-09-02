@@ -14,10 +14,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /**
- * Core HTTP transport layer that executes requests, manages serialization, and maps HTTP errors to typed SDK exceptions.
+ * Core HTTP transport layer that executes requests, manages retries, handles serialization, and maps HTTP errors to typed SDK exceptions.
  */
 public class HttpTransport {
 
@@ -26,17 +31,23 @@ public class HttpTransport {
 
     private final PayPulseConfig config;
     private final HttpClient httpClient;
+    private final RetryPolicy retryPolicy;
     private final ObjectMapper objectMapper;
 
     public HttpTransport(PayPulseConfig config) {
         this(config, HttpClient.newBuilder()
                 .connectTimeout(config.timeout())
-                .build());
+                .build(), new RetryPolicy(config.maxRetries()));
     }
 
     public HttpTransport(PayPulseConfig config, HttpClient httpClient) {
+        this(config, httpClient, new RetryPolicy(config.maxRetries()));
+    }
+
+    public HttpTransport(PayPulseConfig config, HttpClient httpClient, RetryPolicy retryPolicy) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
         this.objectMapper = createDefaultObjectMapper();
     }
 
@@ -51,14 +62,14 @@ public class HttpTransport {
         HttpRequest request = newRequestBuilder(path)
                 .GET()
                 .build();
-        return execute(request, responseType);
+        return execute(request, body -> deserialize(body, responseType));
     }
 
     public <T> T get(String path, TypeReference<T> typeRef) {
         HttpRequest request = newRequestBuilder(path)
                 .GET()
                 .build();
-        return execute(request, typeRef);
+        return execute(request, body -> deserialize(body, typeRef));
     }
 
     public <T> T post(String path, Object requestBody, Class<T> responseType) {
@@ -75,7 +86,7 @@ public class HttpTransport {
         String jsonBody = serialize(requestBody);
         builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8));
 
-        return execute(builder.build(), responseType);
+        return execute(builder.build(), body -> deserialize(body, responseType));
     }
 
     public <T> T put(String path, Object requestBody, Class<T> responseType) {
@@ -83,35 +94,35 @@ public class HttpTransport {
         HttpRequest request = newRequestBuilder(path)
                 .PUT(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
                 .build();
-        return execute(request, responseType);
+        return execute(request, body -> deserialize(body, responseType));
     }
 
     public void delete(String path) {
         HttpRequest request = newRequestBuilder(path)
                 .DELETE()
                 .build();
-        execute(request, Void.class);
+        execute(request, body -> null);
     }
 
     // ==========================================
     // Asynchronous (Non-blocking) API Methods
     // ==========================================
 
-    public <T> java.util.concurrent.CompletableFuture<T> getAsync(String path, Class<T> responseType) {
+    public <T> CompletableFuture<T> getAsync(String path, Class<T> responseType) {
         HttpRequest request = newRequestBuilder(path).GET().build();
         return executeAsync(request, body -> deserialize(body, responseType));
     }
 
-    public <T> java.util.concurrent.CompletableFuture<T> getAsync(String path, TypeReference<T> typeRef) {
+    public <T> CompletableFuture<T> getAsync(String path, TypeReference<T> typeRef) {
         HttpRequest request = newRequestBuilder(path).GET().build();
         return executeAsync(request, body -> deserialize(body, typeRef));
     }
 
-    public <T> java.util.concurrent.CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType) {
+    public <T> CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType) {
         return postAsync(path, requestBody, responseType, null);
     }
 
-    public <T> java.util.concurrent.CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType, String idempotencyKey) {
+    public <T> CompletableFuture<T> postAsync(String path, Object requestBody, Class<T> responseType, String idempotencyKey) {
         HttpRequest.Builder builder = newRequestBuilder(path);
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             builder.header("Idempotency-Key", idempotencyKey);
@@ -121,7 +132,7 @@ public class HttpTransport {
         return executeAsync(builder.build(), body -> deserialize(body, responseType));
     }
 
-    public <T> java.util.concurrent.CompletableFuture<T> putAsync(String path, Object requestBody, Class<T> responseType) {
+    public <T> CompletableFuture<T> putAsync(String path, Object requestBody, Class<T> responseType) {
         String jsonBody = serialize(requestBody);
         HttpRequest request = newRequestBuilder(path)
                 .PUT(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
@@ -129,7 +140,7 @@ public class HttpTransport {
         return executeAsync(request, body -> deserialize(body, responseType));
     }
 
-    public java.util.concurrent.CompletableFuture<Void> deleteAsync(String path) {
+    public CompletableFuture<Void> deleteAsync(String path) {
         HttpRequest request = newRequestBuilder(path).DELETE().build();
         return executeAsync(request, body -> null);
     }
@@ -189,54 +200,97 @@ public class HttpTransport {
         }
     }
 
-    private <T> java.util.concurrent.CompletableFuture<T> executeAsync(HttpRequest request, java.util.function.Function<String, T> deserializer) {
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-                .thenApply(response -> {
-                    handleErrorStatus(response);
-                    if (response.statusCode() == 204 || response.body().isBlank()) {
-                        return null;
-                    }
-                    return deserializer.apply(response.body());
-                });
-    }
+    private <T> T execute(HttpRequest request, Function<String, T> deserializer) {
+        int maxRetries = retryPolicy.getMaxRetries();
+        for (int attempt = 0; ; attempt++) {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                int status = response.statusCode();
 
-    private <T> T execute(HttpRequest request, Class<T> responseType) {
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            handleErrorStatus(response);
+                if (retryPolicy.isRetryableStatus(status) && attempt < maxRetries) {
+                    Duration delay = retryPolicy.computeDelay(attempt, response);
+                    sleepSafe(delay);
+                    continue;
+                }
 
-            if (responseType == Void.class || response.statusCode() == 204 || response.body().isBlank()) {
-                return null;
+                handleErrorStatus(response);
+
+                if (response.statusCode() == 204 || response.body().isBlank()) {
+                    return null;
+                }
+
+                return deserializer.apply(response.body());
+            } catch (IOException e) {
+                if (retryPolicy.isRetryableException(e) && attempt < maxRetries) {
+                    Duration delay = retryPolicy.computeDelay(attempt, null);
+                    sleepSafe(delay);
+                    continue;
+                }
+                String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+                throw new NetworkException("I/O error during API request: " + errorDetail, e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+                throw new NetworkException("API request was interrupted: " + errorDetail, e);
             }
-
-            return objectMapper.readValue(response.body(), responseType);
-        } catch (IOException e) {
-            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NetworkException("I/O error during API request: " + errorDetail, e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NetworkException("API request was interrupted: " + errorDetail, e);
         }
     }
 
-    private <T> T execute(HttpRequest request, TypeReference<T> typeRef) {
+    private <T> CompletableFuture<T> executeAsync(HttpRequest request, Function<String, T> deserializer) {
+        return executeAsyncWithRetry(request, deserializer, 0);
+    }
+
+    private <T> CompletableFuture<T> executeAsyncWithRetry(HttpRequest request, Function<String, T> deserializer, int attempt) {
+        int maxRetries = retryPolicy.getMaxRetries();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+                .handle((response, throwable) -> {
+                    if (throwable != null) {
+                        Throwable cause = (throwable instanceof CompletionException && throwable.getCause() != null)
+                                ? throwable.getCause()
+                                : throwable;
+                        if (retryPolicy.isRetryableException(cause) && attempt < maxRetries) {
+                            Duration delay = retryPolicy.computeDelay(attempt, null);
+                            return scheduleAsyncRetry(request, deserializer, attempt + 1, delay);
+                        }
+                        String errorDetail = (cause.getMessage() != null && !cause.getMessage().isBlank()) ? cause.getMessage() : cause.getClass().getSimpleName();
+                        CompletableFuture<T> failed = new CompletableFuture<>();
+                        failed.completeExceptionally(new NetworkException("I/O error during API request: " + errorDetail, cause));
+                        return failed;
+                    }
+
+                    int status = response.statusCode();
+                    if (retryPolicy.isRetryableStatus(status) && attempt < maxRetries) {
+                        Duration delay = retryPolicy.computeDelay(attempt, response);
+                        return scheduleAsyncRetry(request, deserializer, attempt + 1, delay);
+                    }
+
+                    try {
+                        handleErrorStatus(response);
+                        if (response.statusCode() == 204 || response.body().isBlank()) {
+                            return CompletableFuture.<T>completedFuture(null);
+                        }
+                        return CompletableFuture.completedFuture(deserializer.apply(response.body()));
+                    } catch (Exception ex) {
+                        CompletableFuture<T> failed = new CompletableFuture<>();
+                        failed.completeExceptionally(ex);
+                        return failed;
+                    }
+                })
+                .thenCompose(Function.identity());
+    }
+
+    private <T> CompletableFuture<T> scheduleAsyncRetry(HttpRequest request, Function<String, T> deserializer, int nextAttempt, Duration delay) {
+        var delayedExecutor = CompletableFuture.delayedExecutor(delay.toMillis(), TimeUnit.MILLISECONDS);
+        return CompletableFuture.supplyAsync(() -> null, delayedExecutor)
+                .thenCompose(v -> executeAsyncWithRetry(request, deserializer, nextAttempt));
+    }
+
+    private void sleepSafe(Duration delay) {
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            handleErrorStatus(response);
-
-            if (response.statusCode() == 204 || response.body().isBlank()) {
-                return null;
-            }
-
-            return objectMapper.readValue(response.body(), typeRef);
-        } catch (IOException e) {
-            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NetworkException("I/O error during API request: " + errorDetail, e);
+            Thread.sleep(delay.toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            String errorDetail = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NetworkException("API request was interrupted: " + errorDetail, e);
+            throw new NetworkException("Retry backoff was interrupted", e);
         }
     }
 
@@ -284,6 +338,10 @@ public class HttpTransport {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    public RetryPolicy getRetryPolicy() {
+        return retryPolicy;
     }
 
     public ObjectMapper getObjectMapper() {

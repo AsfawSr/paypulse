@@ -23,14 +23,21 @@ public class ExampleApp {
         System.out.println("     PayPulse Java SDK - Developer Quickstart     ");
         System.out.println("==================================================");
 
-        // 1. Instantiate and configure the client
+        // 1. Instantiate and configure the client with custom Retry Policy
         PayPulseClient client = PayPulseClient.builder()
                 .apiKey("sk_test_51MzQ...exampleKey")
                 .timeout(Duration.ofSeconds(10))
                 .maxRetries(3)
+                .retryPolicy(new io.paypulse.sdk.http.RetryPolicy(
+                        3,
+                        Duration.ofMillis(500),
+                        Duration.ofSeconds(5),
+                        2.0
+                ))
                 .build();
 
         System.out.println("Client initialized with base URL: " + client.getConfig().baseUrl());
+        System.out.println("Automatic Retries Enabled: " + client.getTransport().getRetryPolicy().getMaxRetries() + " max attempts");
         System.out.println();
 
         // 2. Example: Building a Customer Request

@@ -79,6 +79,7 @@ public class PayPulseClient implements AutoCloseable {
         private Duration timeout = PayPulseConfig.DEFAULT_TIMEOUT;
         private int maxRetries = PayPulseConfig.DEFAULT_MAX_RETRIES;
         private HttpClient customHttpClient;
+        private io.paypulse.sdk.http.RetryPolicy customRetryPolicy;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -105,11 +106,21 @@ public class PayPulseClient implements AutoCloseable {
             return this;
         }
 
+        public Builder retryPolicy(io.paypulse.sdk.http.RetryPolicy retryPolicy) {
+            this.customRetryPolicy = retryPolicy;
+            return this;
+        }
+
         public PayPulseClient build() {
             PayPulseConfig config = new PayPulseConfig(apiKey, baseUrl, timeout, maxRetries);
-            HttpTransport transport = (customHttpClient != null)
-                    ? new HttpTransport(config, customHttpClient)
-                    : new HttpTransport(config);
+            HttpClient client = (customHttpClient != null)
+                    ? customHttpClient
+                    : HttpClient.newBuilder().connectTimeout(config.timeout()).build();
+            io.paypulse.sdk.http.RetryPolicy policy = (customRetryPolicy != null)
+                    ? customRetryPolicy
+                    : new io.paypulse.sdk.http.RetryPolicy(config.maxRetries());
+
+            HttpTransport transport = new HttpTransport(config, client, policy);
             return new PayPulseClient(config, transport);
         }
     }
